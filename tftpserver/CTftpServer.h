@@ -2,6 +2,7 @@
 
 #include <WinSock2.h>
 #include <ws2tcpip.h>
+#include <time.h>
 #include "Tftp.h"
 #include "tftp_struct.h"
 #include "tftpd_thread.h"

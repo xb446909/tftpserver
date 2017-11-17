@@ -19,52 +19,10 @@
 #include <process.h>
 #include <stdio.h>
 
-#include "threading.h"
-#include "tftpd_functions.h"
 #include "tftpd_thread.h"
 #include "CTftpServer.h"
 
-
-/////////////////////////////////////////////////////////
-// Security checks
-/////////////////////////////////////////////////////////
-BOOL SecAllowSecurity(const char *szFile, int op_code)
-{
-	struct stat  sStat;
-	BOOL          bForward = (strstr(szFile, "..") == NULL
-		&&  strstr(szFile, "\\\\") == NULL);
-
-	switch (sSettings.SecurityLvl)
-	{
-		// SECURITY_NONE : do not verify
-	case SECURITY_NONE:  return TRUE;
-		// SECURITY_STD  : check that file path doe snot contain ..
-	case SECURITY_STD:
-		if (!bForward) SetLastError(ERROR_DIRECTORY);
-		return bForward;
-		// SECURITY_HIGH : if write request file shoul exist and be empty
-	case SECURITY_HIGH:
-		if (bForward)
-		{
-			sStat.st_size = 0;
-			if (op_code == TFTP_WRQ   &&  stat(szFile, &sStat) == -1)
-				return FALSE;
-			// pour les logs -> positionner l'erreur
-			if (sStat.st_size != 0)  SetLastError(ERROR_BAD_LENGTH);
-			return (sStat.st_size == 0);
-		}
-		else
-		{
-			SetLastError(ERROR_DIRECTORY);
-			return FALSE;
-		}
-	case SECURITY_READONLY:
-		if (bForward  && op_code == TFTP_RRQ) return TRUE;
-		SetLastError(ERROR_DIRECTORY);
-		return FALSE;
-	} // type de sécurit?
-	return FALSE;
-} // SecAllowSecurity
+extern char g_szWorkingDirectory[MAX_PATH];
 
 ////////////////////////////////////////////////////////
 struct errmsg {
@@ -127,16 +85,13 @@ static void SecFileName(char *szFile)
 {
 	char *p;
 	// Translation de '/' en '\'
-	if (sSettings.bUnixStrings)
-	{
-		for (p = szFile; *p != 0; p++)
-			if (*p == '/')  *p = '\\';
+	for (p = szFile; *p != 0; p++)
+		if (*p == '/')  *p = '\\';
 
-	}
 	if (szFile[1] == ':')   szFile[0] = toupper(szFile[0]);
 	// Si option Virtual Root : Suppression de '\\'
 	// sera trait??partir du répertoire courant
-	if (sSettings.bVirtualRoot  && szFile[0] == '\\')
+	if (szFile[0] == '\\')
 		memmove(szFile, szFile + 1, strlen(szFile));
 } // SecFileName
 
@@ -153,7 +108,7 @@ static char *TftpExtendFileName(struct LL_TftpInfo *pTftp,
 	int                 nSize)
 {
 	int  nLength;
-	strcpy(szExtName, sSettings.szWorkingDirectory);
+	strcpy(szExtName, g_szWorkingDirectory);
 	nLength = strlen(szExtName);
 	if (nLength > 0 && szExtName[nLength - 1] != '\\')  szExtName[nLength++] = '\\';
 	// virtual root has already been processed 
@@ -288,7 +243,7 @@ int CreateIndexFile()
 
 	if (Semaph++ != 0)  return 0;
 
-	sprintf(szDirFile, "%s\\%s", sSettings.szWorkingDirectory, DIR_TEXT_FILE);
+	sprintf(szDirFile, "%s\\%s", g_szWorkingDirectory, DIR_TEXT_FILE);
 	hDirFile = CreateFileA(szDirFile,
 		GENERIC_WRITE,
 		FILE_SHARE_READ,
@@ -298,7 +253,7 @@ int CreateIndexFile()
 		NULL);
 	if (hDirFile == INVALID_HANDLE_VALUE) return 0;
 	// Walk through directory
-	ScanDir(hDirFile, sSettings.szWorkingDirectory);
+	ScanDir(hDirFile, g_szWorkingDirectory);
 	CloseHandle(hDirFile);
 	Semaph = 0;
 	return 0;
@@ -319,10 +274,6 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 	int   Rc;
 	BOOL  bOptionsAccepted = FALSE;
 	char  szExtendedName[2 * _MAX_PATH];
-
-#if (defined DEB_TEST || defined DEBUG)
-	sSettings.LogLvl = 10;
-#endif
 
 	// pad end of struct with 0
 	memset(pTftp->b.padding, 0, sizeof pTftp->b.padding);
@@ -403,13 +354,7 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 	// input file parsing
 	//   --> change / to \, modify directory if VirtualRoot is on
 	SecFileName(tp->th_stuff);
-	// Check if it passes security settings 
-	if (!SecAllowSecurity(tp->th_stuff, opcode))
-	{
-		LOG("Error EACCESS on file %s.\n", tp->th_stuff);
-		nak(pTftp, EACCESS);
-		return  CNX_FAILED;
-	}
+
 	// get full name
 	TftpExtendFileName(pTftp, tp->th_stuff, szExtendedName, sizeof szExtendedName);
 	LOG("final name : <%s>", szExtendedName);
@@ -464,7 +409,7 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 
 	// ---------------------------------
 	// loop to handle options
-	while ((sSettings.bNegociate || sSettings.bPXECompatibility) && Ark < TFTP_SEGSIZE)
+	while (Ark < TFTP_SEGSIZE)
 	{
 		if (tp->th_stuff[Ark] == 0) { Ark++; continue; }  // points on next word
 		p = &tp->th_stuff[Ark];
@@ -482,7 +427,7 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 
 		LOG("Option <%s>: value <%s>", p, pValue);
 
-		if (!sSettings.bPXECompatibility && IS_OPT(p, TFTP_OPT_BLKSIZE))
+		if (IS_OPT(p, TFTP_OPT_BLKSIZE))
 		{
 			unsigned dwDataSize;
 			dwDataSize = atoi(pValue);
@@ -506,7 +451,7 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 			}
 		}  // blksize options
 
-		if (!sSettings.bPXECompatibility  &&  IS_OPT(p, TFTP_OPT_TIMEOUT))
+		if (IS_OPT(p, TFTP_OPT_TIMEOUT))
 		{
 			unsigned dwTimeout;
 			dwTimeout = atoi(pValue);
@@ -540,26 +485,6 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 			bOptionsAccepted = TRUE;
 		}  // file size options
 
-		// experimental port option
-		if (sSettings.bPortOption  &&  IS_OPT(p, TFTP_OPT_PORT))
-		{
-			SOCKADDR_STORAGE   sa;
-			int dummy = sizeof sa;
-			// get chosen port for transfer
-			if (getsockname(pTftp->r.skt, (struct sockaddr *) & sa, &dummy) >= 0)
-			{
-				char szServ[NI_MAXSERV];
-				getnameinfo((struct sockaddr *) & sa, sizeof sa, NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
-				LOG("using udpport option --> %s", szServ);
-				strcpy(pAck, p), pAck += strlen(p) + 1;
-				sprintf(pAck, "%d", htons(atoi(szServ)));
-				pAck += strlen(pAck) + 1;
-				pTftp->c.nOAckPort = sSettings.Port;
-				bOptionsAccepted = TRUE;
-			}
-
-		} // port option
-
 	} // for all otptions
 
 	// bOptionsAccepted is TRUE if at least one option is accepted -> an OACK is to be sent
@@ -570,7 +495,7 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 
 	pTftp->c.nCount = pTftp->c.nLastToSend = opcode == TFTP_RRQ && !bOptionsAccepted ? 1 : 0;
 	pTftp->c.nLastBlockOfFile = pTftp->st.dwTransferSize / pTftp->s.dwPacketSize + 1;
-	pTftp->s.ExtraWinSize = sSettings.WinSize / pTftp->s.dwPacketSize;
+	pTftp->s.ExtraWinSize = 0;
 
 	if (bOptionsAccepted)
 	{
@@ -604,27 +529,14 @@ int TftpSendOack(struct LL_TftpInfo *pTftp)
 
 	// OACK packet is in ackbuf
 	pTftp->c.dwBytes += sizeof(short);
-	LOG("send OACK %d bytes, OAckPort: %d", pTftp->c.dwBytes, pTftp->c.nOAckPort);
-	// should OACk be sent on a specifi port (option udpport) ?
-	if (pTftp->c.nOAckPort != 0)
-		Rc = UdpSend(pTftp->c.nOAckPort,
-		(struct sockaddr *) & pTftp->b.from, sizeof pTftp->b.from,
-			pTftp->b.ackbuf, pTftp->c.dwBytes);
-	else// use file transfer socket 
-		Rc = send(pTftp->r.skt, pTftp->b.ackbuf, pTftp->c.dwBytes, 0);
+	LOG("send OACK %d bytes", pTftp->c.dwBytes);
+	Rc = send(pTftp->r.skt, pTftp->b.ackbuf, pTftp->c.dwBytes, 0);
 	if (Rc < 0 || (unsigned)Rc != pTftp->c.dwBytes)
 	{
 		Rc = GetLastError();
 		LOG(0, "send : Error %d", WSAGetLastError());
 		return FALSE;
 	}
-#if (defined DEBUG || defined DEB_TEST)
-	BinDump(pTftp->b.ackbuf, pTftp->c.dwBytes, "OACK:");
-#endif
-	//struct tftphdr *tp;
-	//     tp = (struct tftphdr *)pTftp->b.cnx_frame;
-	//     if ( ntohs (tp->th_opcode) == TFTP_RRQ ) // must wait for ACK block #0
-	//            XXXXXXXXXXXXXXXXXXXXXX
 
 	return TRUE;        // job done
 } // TftpSendOack
@@ -650,9 +562,7 @@ static void TftpEndOfTransfer(struct LL_TftpInfo *pTftp)
 		(int)(time(NULL) - pTftp->st.StartTime),
 		pTftp->st.dwTotalTimeOut,
 		PLURAL(pTftp->st.dwTotalTimeOut));
-	if (sSettings.bBeep
-		&&  time(NULL) - pTftp->st.StartTime > TIME_FOR_LONG_TRANSFER)
-		MessageBeep(MB_ICONASTERISK);
+
 } // TftpEndOfTransfer
 
 
@@ -793,10 +703,9 @@ int TftpSendFile(struct LL_TftpInfo *pTftp)
 			pTftp->c.nTimeOut++;
 		}   // nothing received
 	} // for loop
-	while ((pTftp->c.nLastToSend <= pTftp->c.nLastBlockOfFile	 // not eof or eof but not acked
-		|| (!sSettings.bIgnoreLastBlockAck && pTftp->c.nRetries != 0))
+	while (pTftp->c.nLastToSend <= pTftp->c.nLastBlockOfFile	 // not eof or eof but not acked
 		&& pTftp->c.nRetries < TFTP_MAXRETRIES                 // same block sent N times (dog guard)
-		&&  pTftp->c.nTimeOut < sSettings.Retransmit);        // N timeout without answer
+		&&  pTftp->c.nTimeOut < TFTP_RETRANSMIT);        // N timeout without answer
 
 // reason of exiting the loop
 	if (pTftp->c.nRetries >= TFTP_MAXRETRIES)	// watch dog
@@ -806,13 +715,13 @@ int TftpSendFile(struct LL_TftpInfo *pTftp)
 		nak(pTftp, EUNDEF);  // return standard
 		return FALSE;
 	}
-	else if (pTftp->c.nTimeOut >= sSettings.Retransmit  &&  pTftp->c.nLastToSend > pTftp->c.nLastBlockOfFile)
+	else if (pTftp->c.nTimeOut >= TFTP_RETRANSMIT  &&  pTftp->c.nLastToSend > pTftp->c.nLastBlockOfFile)
 	{
 		LOG("WARNING : Last block #%d not acked for file <%s>",
 			(unsigned short)pTftp->c.nCount, ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);
 		pTftp->st.dwTotalTimeOut += pTftp->c.nTimeOut;
 	}
-	else if (pTftp->c.nTimeOut >= sSettings.Retransmit)
+	else if (pTftp->c.nTimeOut >= TFTP_RETRANSMIT)
 	{
 		LOG("TIMEOUT waiting for Ack block #%d ", pTftp->c.nCount);
 		nak(pTftp, EUNDEF);  // return standard
@@ -919,7 +828,7 @@ int TftpRecvFile(struct LL_TftpInfo *pTftp, BOOL bOACK)
 		} // do
 	while (pTftp->c.dwBytes == pTftp->s.dwPacketSize
 		&&  pTftp->c.nRetries < TFTP_MAXRETRIES
-		&&  pTftp->c.nTimeOut < sSettings.Retransmit);
+		&&  pTftp->c.nTimeOut < TFTP_RETRANSMIT);
 
 		// MAX RETRIES -> synchro error
 		if (pTftp->c.nRetries >= TFTP_MAXRETRIES)
@@ -929,7 +838,7 @@ int TftpRecvFile(struct LL_TftpInfo *pTftp, BOOL bOACK)
 			nak(pTftp, EUNDEF);  // return standard
 			return FALSE;
 		}
-		if (pTftp->c.nTimeOut >= sSettings.Retransmit)
+		if (pTftp->c.nTimeOut >= TFTP_RETRANSMIT)
 		{
 			LOG("TIMEOUT while waiting for Data block %d, file <%s>",
 				(unsigned short)(pTftp->c.nCount + 1), ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);

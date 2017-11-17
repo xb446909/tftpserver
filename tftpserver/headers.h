@@ -8,7 +8,7 @@
 //////////////////////////////////////////////////////
 
 // #define TFTP_CLIENT_ONLY 1
-
+#pragma once
 
 #define WIN32_LEAN_AND_MEAN // this will assume smaller exe
 #define _CRT_SECURE_NO_DEPRECATE
@@ -32,22 +32,22 @@
 #include <sys/stat.h>
 #include <process.h>
 
-#include "custom.h"
 #include "Tftp.h"
 #include "tftp_struct.h"
-
-#include "settings.h"
-
 
 
 typedef unsigned char  u_int8_t;
 typedef unsigned short u_int16_t;
 typedef unsigned long  u_int32_t;
 
+#define  TFTP_DEFADDR			"0.0.0.0"
+#define  DIR_TEXT_FILE          "dir.txt"
 
-#define LOGSIZE 512
+#  define TFTP_TIMEOUT            3
+#  define TFTP_RETRANSMIT         6
+#  define TFTPD32_DEF_LOG_LEVEL   8
+#  define TFTP_DEFPORT			  69
 
-// Synchronous log via OutputDebugString
+#define TFTP_MAXRETRIES          50 // do not resent same block more than # times
 
-int UdpSend(int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data, int len);
-
+#define  PLURAL(a)  ((a)>1 ? "s" : "")

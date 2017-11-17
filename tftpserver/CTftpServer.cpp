@@ -19,7 +19,6 @@ CTftpServer::CTftpServer(SOCKADDR_IN addr)
 	m_hThread = CreateThread(NULL, 0, TftpProc, &m_threadParam, 0, NULL);
 }
 
-
 CTftpServer::~CTftpServer()
 {
 }
@@ -51,22 +50,24 @@ DWORD __stdcall TftpProc(LPVOID lpParam)
 	hObjects[0] = hSocketEvent;
 	hObjects[1] = pParam->hEvent;
 
-	while (true)
+	int Rc = WaitForMultipleObjects(2, hObjects, FALSE, INFINITE);
+	switch (Rc)
 	{
-		int Rc = WaitForMultipleObjects(2, hObjects, FALSE, 2000);
-		switch (Rc)
-		{
-		case WAIT_OBJECT_0:
-			LOG("Received socket!\n");
-			RecvNewSocket(lpParam);
-			break;
-		case (WAIT_OBJECT_0 + 1):
-			LOG("Received thread exit event!\n");
-			break;
-		default:
-			break;
-		}
+	case WAIT_OBJECT_0:
+		LOG("Received socket!\n");
+		WSAEventSelect(pParam->socket, 0, 0);
+		RecvNewSocket(lpParam);
+		ResetEvent(hSocketEvent);
+		break;
+	case (WAIT_OBJECT_0 + 1):
+		LOG("Received thread exit event!\n");
+		break;
+	default:
+		break;
 	}
+
+	LOG("End tftp main thread!\n");
+	return 0;
 }
 
 
@@ -74,6 +75,10 @@ int RecvNewSocket(LPVOID lpParam)
 {
 	CTftpServer::ThreadParam* pParam = (CTftpServer::ThreadParam*)lpParam;
 	TftpInfo* pTftp = &pParam->tftp;
+
+	memset(&pTftp->st, 0, sizeof pTftp->st);
+	memset(&pTftp->b, 0, sizeof pTftp->b);
+	time(&pTftp->st.StartTime);
 
 	int fromlen = sizeof pTftp->b.cnx_frame;
 	int Rc = recvfrom(pParam->socket, pTftp->b.cnx_frame, sizeof pTftp->b.cnx_frame, 0,
@@ -119,11 +124,12 @@ int StartTftpTransfer(LPVOID lpParam)
 		struct sockaddr_storage s_in;
 		int s_len = sizeof(s_in);
 		char szServ[NI_MAXSERV];
-		getsockname(pTftp->r.skt, (struct sockaddr *) & s_in, &s_len);
+		getsockname(pParam->socket, (struct sockaddr *) & s_in, &s_len);
 		getnameinfo((struct sockaddr *) & s_in, sizeof s_in, NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
 		LOG("Using local port %s, Remote port: %d, Rc: %d", szServ, ntohs(((struct sockaddr_in *) (&pTftp->b.from))->sin_port), Rc);
 
 		pTftp->st.ret_code = TFTP_TRF_RUNNING;
+		pTftp->r.skt = pParam->socket;
 
 		// everything OK so far
 		switch (Rc)

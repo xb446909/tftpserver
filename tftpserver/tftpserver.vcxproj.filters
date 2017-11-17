@@ -30,12 +30,12 @@
     <ClInclude Include="tftpd_thread.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="headers.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="settings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="tftpd_thread.cpp">

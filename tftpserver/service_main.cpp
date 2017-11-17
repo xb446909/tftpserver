@@ -12,16 +12,19 @@
 #include "stdafx.h"
 #include "headers.h"
 #include <process.h>
-#include "threading.h"
 #include <stdio.h>
 #include "tftpserver.h"
 #include "CTftpServer.h"
 
 CTftpServer* pServer;
 
+char g_szWorkingDirectory[MAX_PATH];
+char g_szIniPath[MAX_PATH];
+
 void StartTftpd32Services(const char* szIniPath)
 {
-	// starts worker threads
+	strcpy(g_szIniPath, szIniPath);
+
 	int iResult;
 	WSADATA wsaData;
 	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -30,7 +33,7 @@ void StartTftpd32Services(const char* szIniPath)
 		return;
 	}
 	char szPath[MAX_PATH] = { 0 };
-	GetPrivateProfileStringA("TftpServer", "WorkingDirectory", sSettings.szWorkingDirectory, szPath, MAX_PATH, szIniPath);
+	GetPrivateProfileStringA("TftpServer", "WorkingDirectory", "D:\\", szPath, MAX_PATH, g_szIniPath);
 	SetWorkDirectory(szPath);
 
 	SOCKADDR_IN addr;
@@ -39,7 +42,7 @@ void StartTftpd32Services(const char* szIniPath)
 	addr.sin_port = htons(69);
 
 	pServer = new CTftpServer(addr);
-	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, szIniPath);
+	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, g_szIniPath);
 } // StartTftpd32Services
 
 void StopTftpd32Services(void)
@@ -49,8 +52,8 @@ void StopTftpd32Services(void)
 
 void SetWorkDirectory(const char* szPath)
 {
-	//WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, INI_FILE);
-	//strncpy(sSettings.szWorkingDirectory, szPath, MAX_PATH);
+	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, g_szIniPath);
+	strncpy(g_szWorkingDirectory, szPath, MAX_PATH);
 }
 
   // send data using Udp
