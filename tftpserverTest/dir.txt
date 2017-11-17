@@ -1,0 +1,8 @@
+dir.txt	2017/11/1	0
+stdafx.cpp	2017/10/29	330
+stdafx.h	2017/10/29	366
+targetver.h	2017/10/29	370
+TftpserverConfig.ini	2017/11/1	60
+tftpserverTest.cpp	2017/10/29	834
+tftpserverTest.vcxproj	2017/10/29	8037
+tftpserverTest.vcxproj.filters	2017/10/29	1255
