@@ -47,9 +47,6 @@ extern const int g_VERSION;
 #define REG_ERROR() MessageBox (NULL, "Error during registry access", "Tftpd32", MB_ICONEXCLAMATION | MB_OK)
 
 
-#define  INI_FILE               ".\\TftpserverConfig.ini"
-
-
 
 //////////////////////////
 // Commandes et paramètres TFTP

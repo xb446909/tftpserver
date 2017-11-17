@@ -7,6 +7,7 @@
 // 
 //////////////////////////////////////////////////////
 
+#pragma once
 
 #define MAX_TFTP_OPTIONS	16
 
@@ -71,7 +72,6 @@ struct S_Trf_Resource
 {
     SOCKET          skt;                // socket de la connexion
     HANDLE          hFile;              // file handler
-    // HWND            hGaugeWnd;          // Handler of Gauge Window
 } ;         // struct S_Trf_Resource
 // Thread management
 struct S_Thread_Management
@@ -91,7 +91,7 @@ struct S_Thread_Management
 
 
 // The super structure and pointer to next block
-struct LL_TftpInfo
+typedef struct LL_TftpInfo
 {
     struct S_Thread_Management  tm;
     struct S_Trf_Resource       r;
@@ -99,9 +99,7 @@ struct LL_TftpInfo
     struct S_Trf_Settings       s;
     struct S_Trf_Buffers        b;
     struct S_Trf_Statistics     st;
-
-    struct LL_TftpInfo *next;
-} ;
+}TftpInfo;
 
 ////////////////////////////////////////////////////////////
 // End of transfer/thread structure

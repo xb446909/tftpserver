@@ -48,17 +48,17 @@ void ConsoleTftpGetStatistics(void)
 
 
 
-static SOCKET TftpBindLocalInterface(void)
+static SOCKET TftpBindLocalInterface(const char* szIniPath)
 {
 	char strPort[64] = { 0 };
 	char strDefPort[64] = { 0 };
 	char strIp[64] = { 0 };
 	char strApp[128] = { 0 };
 	sprintf(strDefPort, "%d", TFTP_DEFPORT);
-	GetPrivateProfileStringA("TftpServer", "Address", TFTP_DEFADDR, strIp, 63, INI_FILE);
-	WritePrivateProfileStringA("TftpServer", "Address", strIp, INI_FILE);
-	GetPrivateProfileStringA("TftpServer", "Port", strDefPort, strPort, 63, INI_FILE);
-	WritePrivateProfileStringA("TftpServer", "Port", strPort, INI_FILE);
+	GetPrivateProfileStringA("TftpServer", "Address", TFTP_DEFADDR, strIp, 63, szIniPath);
+	WritePrivateProfileStringA("TftpServer", "Address", strIp, szIniPath);
+	GetPrivateProfileStringA("TftpServer", "Port", strDefPort, strPort, 63, szIniPath);
+	WritePrivateProfileStringA("TftpServer", "Port", strPort, szIniPath);
 
 	sSettings.Port = atoi(strPort);
 
@@ -250,7 +250,7 @@ static int TftpdChooseNewThread(SOCKET sListenerSocket)
 		{
 			memmove(szAddr, szAddr + sizeof("::ffff:") - 1, strlen(szAddr + sizeof("::ffff:") - 1) + 1);
 		}
-		//LOG (1, "Warning : Unaccepted request received from %s", szAddr);
+		LOG (1, "Warning : Unaccepted request received from %s", szAddr);
 		// the Tftp structure has been created --> suppress it
 		if (!pTftp->tm.bPermanentThread)
 		{
@@ -284,15 +284,17 @@ static int TftpdChooseNewThread(SOCKET sListenerSocket)
 		// start new thread or wake up permanent one
 		if (bNewThread)
 		{
+			pTftp->r.skt = sListenerSocket;
 			// create the worker thread
 			// pTftp->tm.dwThreadHandle = (HANDLE) _beginthread (StartTftpTransfer, 8192, (void *) pTftp);
-			pTftp->tm.dwThreadHandle = CreateThread(NULL,
-				8192,
-				StartTftpTransfer,
-				pTftp,
-				0,
-				&pTftp->tm.dwThreadHandleId);
-			LogToMonitor("Thread %d transfer %d started (records %p/%p)\n", pTftp->tm.dwThreadHandleId, pTftp->tm.dwTransferId, pTftpFirst, pTftp);
+			StartTftpTransfer(pTftp);
+			//pTftp->tm.dwThreadHandle = CreateThread(NULL,
+			//	8192,
+			//	StartTftpTransfer,
+			//	pTftp,
+			//	0,
+			//	&pTftp->tm.dwThreadHandleId);
+			//LogToMonitor("Thread %d transfer %d started (records %p/%p)\n", pTftp->tm.dwThreadHandleId, pTftp->tm.dwTransferId, pTftpFirst, pTftp);
 			//LOG (9, "thread %d started", pTftp->tm.dwThreadHandle);
 
 		}

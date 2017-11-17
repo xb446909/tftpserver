@@ -35,47 +35,21 @@ struct S_RestartTable
 };
 
 
-// threads started by StartAllThreads
-void TftpdConsole (void *param);
-void ListenDhcpMessage (void *param);
-void TftpdMain (void *param);
-void SntpdProc (void *param);
-void SyslogProc (void *param);
-void AsyncSaveKeyBckgProc (void *param);
-void Scheduler (void *param);
-void ListenDNSMessage (void * param);
-
 
 // Threads management : birth, life and death
-int  StartAllWorkerThreads (void);
-int  StartMultiWorkerThreads (BOOL bSoft);
+int  StartMultiWorkerThreads (const char* szIniPath);
 int  WakeUpThread (int Idx);
 void TerminateWorkerThreads (BOOL bSoft);
 int GetRunningThreads (void);
 
-// Access to console
-int SendMsgRequest (int type,				// msg type
-					const void *msg_stuff,	// data
-					int size,				// size of data
-					BOOL bBlocking,			// block thread until msg sent
-					BOOL bRetain );			// retain msg if GUI not connected
 
 BOOL Tftpd32ReadSettings (void);
 BOOL Tftpd32SaveSettings (void);
 BOOL Tftpd32DestroySettings (void);
 void Tftpd32UpdateServices (void *lparam);
 
-// Send the IP interfaces
-int	AnswerIPList (void);
-
-// Complex actions handled by console thread
-void SendDirectoryContent (void);
 
 // interaction between tftp and console (statistics)
 DWORD WINAPI StartTftpTransfer (LPVOID pThreadArgs);
-int ReportNewTrf (const struct LL_TftpInfo *pTftp);
 void ConsoleTftpGetStatistics (void);
 
-// Actions called by Scheduler
-int PoolNetworkInterfaces (void);
-int GetIPv4Address (const char *szIf, char *szIP);

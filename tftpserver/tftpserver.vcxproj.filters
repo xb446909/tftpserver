@@ -24,24 +24,27 @@
     <ClInclude Include="tftpserver.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="CTftpServer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="tftpd_thread.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="service_main.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="settings.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="start_threads.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="tftpd_main.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="tftpd_thread.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CTftpServer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="service_main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

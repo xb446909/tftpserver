@@ -57,7 +57,7 @@ struct S_Tftpd32Settings sSettings =
 
 	  // unsaved
 	  100,                   // Max Simultaneous Transfers
-	  ".",                   // Working Directory
+	  "D:\\",                   // Working Directory
 	  2000,                  // refresh Interval
 	  0,		 // default port
 };

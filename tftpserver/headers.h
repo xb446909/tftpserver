@@ -48,10 +48,6 @@ typedef unsigned long  u_int32_t;
 #define LOGSIZE 512
 
 // Synchronous log via OutputDebugString
-void LogToMonitor(char *sz, ...);
-
-void LOG(int DebugLevel, const char *szFmt, ...);
 
 int UdpSend(int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data, int len);
 
-char *LastErrorText(void);

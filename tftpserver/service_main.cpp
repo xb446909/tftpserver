@@ -15,9 +15,11 @@
 #include "threading.h"
 #include <stdio.h>
 #include "tftpserver.h"
+#include "CTftpServer.h"
 
+CTftpServer* pServer;
 
-void StartTftpd32Services(void)
+void StartTftpd32Services(const char* szIniPath)
 {
 	// starts worker threads
 	int iResult;
@@ -28,51 +30,28 @@ void StartTftpd32Services(void)
 		return;
 	}
 	char szPath[MAX_PATH] = { 0 };
-	GetPrivateProfileStringA("TftpServer", "WorkingDirectory", sSettings.szWorkingDirectory, szPath, MAX_PATH, INI_FILE);
+	GetPrivateProfileStringA("TftpServer", "WorkingDirectory", sSettings.szWorkingDirectory, szPath, MAX_PATH, szIniPath);
 	SetWorkDirectory(szPath);
-	StartMultiWorkerThreads(FALSE);
-	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, INI_FILE);
-	LogToMonitor("Worker threads started\n");
+
+	SOCKADDR_IN addr;
+	addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(69);
+
+	pServer = new CTftpServer(addr);
+	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, szIniPath);
 } // StartTftpd32Services
 
 void StopTftpd32Services(void)
 {
-	TerminateWorkerThreads(FALSE);
+	//TerminateWorkerThreads(FALSE);
 }
 
 void SetWorkDirectory(const char* szPath)
 {
-	WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, INI_FILE);
-	strncpy(sSettings.szWorkingDirectory, szPath, MAX_PATH);
+	//WritePrivateProfileStringA("TftpServer", "WorkingDirectory", szPath, INI_FILE);
+	//strncpy(sSettings.szWorkingDirectory, szPath, MAX_PATH);
 }
-
-// Function LastErrorText
-// A wrapper for FormatMessage : retrieve the message text for a system-defined error 
-char *LastErrorText(void)
-{
-	static char szLastErrorText[512];
-	sprintf(szLastErrorText, "Last error: %d\n", GetLastError());
-	//LPVOID      lpMsgBuf = NULL;
-	//LPSTR       p;
-
-	//FormatMessageA(
-	//	FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-	//	NULL,
-	//	GetLastError(),
-	//	MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-	//	(char*)lpMsgBuf,
-	//	0,
-	//	NULL);
-	//memset(szLastErrorText, 0, sizeof szLastErrorText);
-	//strncpy(szLastErrorText, (char*)lpMsgBuf, sizeof szLastErrorText);
-	//// Free the buffer.
-	//LocalFree(lpMsgBuf);
-	//// remove ending \r\n
-	//p = strchr(szLastErrorText, '\r');
-	//if (p != NULL)  *p = 0;
-	return szLastErrorText;
-} // LastErrorText
-
 
   // send data using Udp
 int UdpSend(int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data, int len)
@@ -97,56 +76,17 @@ int UdpSend(int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data,
 	if (s == INVALID_SOCKET)  return -1;
 	// REUSEADDR option in order to allow thread to open 69 port
 	Rc = setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)& True, sizeof True);
-	LogToMonitor(Rc == 0 ? "UdpSend: Port %d may be reused" : "setsockopt error", nFromPort);
+	LOG(Rc == 0 ? "UdpSend: Port %d may be reused" : "setsockopt error", nFromPort);
 
 	Rc = bind(s, res->ai_addr, res->ai_addrlen);
 	freeaddrinfo(res);
 
-	LogToMonitor("UdpSend bind returns %d (error %d)", Rc, GetLastError());
+	LOG("UdpSend bind returns %d (error %d)", Rc, GetLastError());
 	if (Rc < 0) { closesocket(s); return -1; }
 
 	Rc = sendto(s, data, len, 0, sa_to, sa_len);
-	LogToMonitor("sendto returns %d", Rc);
+	LOG("sendto returns %d", Rc);
 	closesocket(s);
 	return Rc;
 } // UdpSend
 
-
-void LogToMonitor(char *fmt, ...)
-{
-	va_list args;
-	char sz[LOGSIZE];
-	int n;
-
-	sz[sizeof sz - 1] = 0;
-	va_start(args, fmt);
-	n = sprintf(sz, "Th%5d :", GetCurrentThreadId());
-	vsprintf(&sz[n], fmt, args);
-	OutputDebugStringA(sz);
-}
-
-void LOG(int DebugLevel, const char *szFmt, ...)
-{
-	va_list args;
-	char sz[LOGSIZE];
-	int n;
-
-	sz[sizeof sz - 1] = 0;
-	va_start(args, szFmt);
-	n = sprintf(sz, "Th%5d :", GetCurrentThreadId());
-	vsprintf(&sz[n], szFmt, args);
-	OutputDebugStringA(sz);
-}
-
-void SVC_ERROR(const char *szFmt, ...)
-{
-	va_list args;
-	char sz[LOGSIZE];
-	int n;
-
-	sz[sizeof sz - 1] = 0;
-	va_start(args, szFmt);
-	n = sprintf(sz, "Th%5d :", GetCurrentThreadId());
-	vsprintf(&sz[n], szFmt, args);
-	OutputDebugStringA(sz);
-}

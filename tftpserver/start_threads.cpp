@@ -60,10 +60,10 @@ static const struct S_MultiThreadingConfig
 	int         wake_up_by_ev;              // would a SetEvent wake up the thread, FALSE if thread blocked on recvfrom
 	int         restart;                    // should the thread by restarted  
 }
-tThreadsConfig[] =
+tThreadsConfig[1] =
 {
 	// Order is the same than enum in threading.h
-	"TFTP",      TFTPD32_TFTP_SERVER,  TftpdMain, FALSE,  4096, AF_INET, SOCK_DGRAM, "tftp", &sSettings.Port, TFTP_PORT,  sSettings.szTftpLocalIP,  TRUE,   TRUE,
+	//"TFTP",      TFTPD32_TFTP_SERVER,  TftpdMain, FALSE,  4096, AF_INET, SOCK_DGRAM, "tftp", &sSettings.Port, TFTP_PORT,  sSettings.szTftpLocalIP,  TRUE,   TRUE,
 };
 
 
@@ -163,8 +163,10 @@ int GetRunningThreads(void)
 /////////////////////////////////////////////////
 // of threads life and death
 /////////////////////////////////////////////////
-static int StartSingleWorkerThread(int Ark)
+static int StartSingleWorkerThread(SOCKADDR_IN addr)
 {
+
+
 	if (tThreads[Ark].gRunning)  return 0;
 
 	tThreads[Ark].skt = INVALID_SOCKET;
@@ -203,139 +205,11 @@ static int StartSingleWorkerThread(int Ark)
 
 
 // Start all threads
-int StartMultiWorkerThreads(BOOL bSoft)
+int StartMultiWorkerThreads(const char* szIniPath)
 {
-#define INIT_MAX_ATTEMPS 30
-	int Ark, nToBeStarted = 0, nThreadInitialized, nAttempts = 0;
-#ifdef _DEBUG
-	int Rc;
-#endif
-
-	for (Ark = 0; Ark < TH_NUMBER; Ark++)
-	{
-		// process mangement threads and 
-		if ((!bSoft   &&   TFTPD32_MNGT_THREADS & tThreadsConfig[Ark].serv_mask)
-			|| sSettings.uServices  & tThreadsConfig[Ark].serv_mask)
-		{
-			StartSingleWorkerThread(Ark);
-#ifdef SERVICE_EDITION
-			// for service, do not wait for console to be connected to GUI 
-			// bInit set by console only when TCP connection between service and gui done
-			if (tThreadsConfig[Ark].serv_mask != TFTPD32_CONSOLE)
-#endif
-				nToBeStarted++;
-			// Pause to synchronise GUI and console
-		} // process all threads
-	}
-
-	// GUI should run faster than the other threads.
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-
-
-#ifdef _DEBUG
-	// stress test synchronisation
-	Rc = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-	//  Rc = SetThreadPriority (tThreads [TH_CONSOLE].tTh, THREAD_PRIORITY_BELOW_NORMAL);
-	if (Rc == 0) Rc = GetLastError();
-#endif
-
-	// waits until the services are started
-	do
-	{
-		nAttempts++;
-		Sleep(100);
-		// count number of services initialized
-		for (Ark = nThreadInitialized = 0; Ark < TH_NUMBER; Ark++)
-			if (tThreads[Ark].bInit) nThreadInitialized++;
-	} while (nThreadInitialized < nToBeStarted  &&  nAttempts < INIT_MAX_ATTEMPS);
-	if (nAttempts >= INIT_MAX_ATTEMPS)
-	{
-		// at least on service has not been started -> find which one
-		for (Ark = nThreadInitialized = 0; Ark < TH_NUMBER; Ark++)
-			if ((
-				(!bSoft   &&   TFTPD32_MNGT_THREADS & tThreadsConfig[Ark].serv_mask)
-				|| sSettings.uServices  & tThreadsConfig[Ark].serv_mask
-				)
-				&& !tThreads[Ark].bInit
-				)
-				LogToMonitor("service %s not started", tThreadsConfig[Ark].name);
-	} // log errors
-	else LogToMonitor("--- all services started, init done");
-
-
-	//// wake up GUI
-	//SendMsgRequest(C_SERVICES_STARTED, NULL, 0, FALSE, FALSE);
-	//// let time for the GUI to pool the services
-	////Sleep (500);
-
-	if (IsIPv6Enabled())
-		LogToMonitor("IPv6 enabled");
-	return TRUE;
+	SOCKADDR_IN addr;
+	StartSingleWorkerThread(addr);
+	return 0;
 } // StartMultiWorkerThreads
-
-
-void TerminateWorkerThreads(BOOL bSoft)
-{
-	int Ark;
-	HANDLE tHdle[TH_NUMBER];
-	int nCount;
-	for (Ark = 0, nCount = 0; Ark < TH_NUMBER; Ark++)
-	{
-		// if bSoft do not kill management threads
-		if (bSoft  &&  TFTPD32_MNGT_THREADS & tThreadsConfig[Ark].serv_mask)
-			continue;
-
-		if (tThreads[Ark].gRunning)
-		{
-			tThreads[Ark].gRunning = FALSE;
-			WakeUpThread(Ark);
-			tHdle[nCount++] = tThreads[Ark].tTh;
-		} // if service is running
-	}
-	// wait for end of threads
-	WaitForMultipleObjects(nCount, tHdle, TRUE, 5000);
-
-	for (Ark = 0; Ark < TH_NUMBER; Ark++)
-	{
-		if (!(bSoft  &&  TFTPD32_MNGT_THREADS & tThreadsConfig[Ark].serv_mask))
-			FreeThreadResources(Ark);
-	}
-	LogToMonitor("all level 1 threads have returned\n");
-} // TerminateWorkerThreads
-
-
-// ---------------------------------------------------------------
-// Settings has been changed : kill old threads and start new threads
-// ---------------------------------------------------------------
-void Tftpd32UpdateServices(void *lparam)
-{
-	int Ark;
-	struct S_RestartTable *pRestart = (struct S_RestartTable *) lparam;
-
-	// scan all worker threads
-	for (Ark = TH_TFTP; Ark < TH_NUMBER; Ark++)
-	{
-		BOOL bOld = pRestart->oldservices & tThreadsConfig[Ark].serv_mask;
-		BOOL bNew = pRestart->newservices & tThreadsConfig[Ark].serv_mask;
-		BOOL bFlap = tThreads[Ark].gRunning && (pRestart->flapservices & tThreadsConfig[Ark].serv_mask);
-		// do not restart a service which is not running
-		// signal thread
-		if (bFlap || (bOld && !bNew))
-		{
-			LogToMonitor("terminating %s service\n", tThreadsConfig[Ark].name);
-			tThreads[Ark].gRunning = FALSE;
-			tThreads[Ark].bSoftReset = TRUE;
-			WakeUpThread(Ark);
-			// Now wait long enough since Scheduler has to record the end of each thread
-			Sleep(200);
-		}
-		// not running but should be started
-		if (bFlap || (!bOld && bNew))
-		{
-			LogToMonitor("starting %s service\n", tThreadsConfig[Ark].name);
-			StartSingleWorkerThread(Ark);
-		}
-	} // scan all events
-} // Tftpd32UpdateServices
 
 
