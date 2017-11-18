@@ -14,12 +14,14 @@ public:
 	{
 		SOCKET socket;
 		HANDLE hEvent;
+		HANDLE hEstablish;
 		TftpInfo tftp;
 	}ThreadParam;
 	static void DebugString(char *fmt, ...);
-	CTftpServer(SOCKADDR_IN addr);
+	CTftpServer(HANDLE hEvent);
+	BOOL IsThreadExit();
 	~CTftpServer();
-
+	int GetPort();
 private:
 	HANDLE m_hThread;
 	ThreadParam m_threadParam;

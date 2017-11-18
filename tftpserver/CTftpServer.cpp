@@ -1,26 +1,54 @@
 #include "StdAfx.h"
 #include "CTftpServer.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 DWORD __stdcall TftpProc(LPVOID lpParam);
 int RecvNewSocket(LPVOID lpParam);
 int StartTftpTransfer(LPVOID lpParam);
 
-CTftpServer::CTftpServer(SOCKADDR_IN addr)
+CTftpServer::CTftpServer(HANDLE hEvent)
 	: m_hThread(INVALID_HANDLE_VALUE)
 {
 	m_threadParam.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (bind(m_threadParam.socket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
+
+	SOCKADDR_IN bindAddr;
+	bindAddr.sin_addr.S_un.S_addr = INADDR_ANY;
+	bindAddr.sin_family = AF_INET;
+	bindAddr.sin_port = htons(0);
+	if (bind(m_threadParam.socket, (SOCKADDR*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
 	{
-		LOG("bind error: %d\n", WSAGetLastError());
+		LOG("bind error: %d", WSAGetLastError());
 		return;
 	}
 	m_threadParam.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	m_threadParam.hEstablish = hEvent;
 	m_hThread = CreateThread(NULL, 0, TftpProc, &m_threadParam, 0, NULL);
+}
+
+BOOL CTftpServer::IsThreadExit()
+{
+	return (WaitForSingleObject(m_hThread, 0) == WAIT_OBJECT_0);
 }
 
 CTftpServer::~CTftpServer()
 {
+	SetEvent(m_threadParam.hEvent);
+	WaitForSingleObject(m_hThread, INFINITE);
+	CloseHandle(m_hThread);
+	CloseHandle(m_threadParam.hEvent);
+
+	LOG("Server deleted!");
+}
+
+int CTftpServer::GetPort()
+{
+	struct sockaddr_storage s_in;
+	int s_len = sizeof(s_in);
+	char szServ[NI_MAXSERV];
+	getsockname(m_threadParam.socket, (struct sockaddr *) & s_in, &s_len);
+	getnameinfo((struct sockaddr *) & s_in, sizeof s_in, NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
+	return atoi(szServ);
 }
 
 void CTftpServer::DebugString(char * fmt, ...)
@@ -35,13 +63,14 @@ void CTftpServer::DebugString(char * fmt, ...)
 	vsprintf(&sz[n], fmt, args);
 	va_end(args);
 	strcat(sz, "\n");
+	printf(sz);
 	OutputDebugStringA(sz);
 }
 
 
 DWORD __stdcall TftpProc(LPVOID lpParam)
 {
-	LOG("Start tftp main thread!\n");
+	LOG("Start tftp main thread!");
 	CTftpServer::ThreadParam* pParam = (CTftpServer::ThreadParam*)lpParam;
 	HANDLE hSocketEvent = WSACreateEvent();
 	WSAEventSelect(pParam->socket, hSocketEvent, FD_READ);
@@ -50,23 +79,27 @@ DWORD __stdcall TftpProc(LPVOID lpParam)
 	hObjects[0] = hSocketEvent;
 	hObjects[1] = pParam->hEvent;
 
-	int Rc = WaitForMultipleObjects(2, hObjects, FALSE, INFINITE);
+	SetEvent(pParam->hEstablish);
+
+	LOG("Receive tftp is ready!");
+
+	int Rc = WaitForMultipleObjects(2, hObjects, FALSE, 5000);
 	switch (Rc)
 	{
 	case WAIT_OBJECT_0:
-		LOG("Received socket!\n");
+		LOG("Received tftp!");
 		WSAEventSelect(pParam->socket, 0, 0);
 		RecvNewSocket(lpParam);
 		ResetEvent(hSocketEvent);
 		break;
 	case (WAIT_OBJECT_0 + 1):
-		LOG("Received thread exit event!\n");
+		LOG("Received thread exit event!");
 		break;
 	default:
 		break;
 	}
 
-	LOG("End tftp main thread!\n");
+	LOG("End tftp main thread!");
 	return 0;
 }
 
@@ -86,11 +119,11 @@ int RecvNewSocket(LPVOID lpParam)
 
 	if (Rc < 0)
 	{
-		LOG("Receive error: %d\n", WSAGetLastError());
+		LOG("Receive error: %d", WSAGetLastError());
 	}
 	else if (Rc > PKTSIZE)
 	{
-		LOG("Error: Received too much bytes!\n");
+		LOG("Error: Received too much bytes!");
 	}
 	else
 	{
@@ -115,7 +148,7 @@ int StartTftpTransfer(LPVOID lpParam)
 	if ((Rc = connect(pParam->socket, (struct sockaddr *) & pTftp->b.from, sizeof pTftp->b.from)) != 0)
 	{
 		Rc = GetLastError();
-		LOG("Error : connect returns %d\n", Rc);
+		LOG("Error : connect returns %d", Rc);
 		Sleep(1000);
 	}
 	else if ((Rc = DecodConnectData(pTftp)) != CNX_FAILED)

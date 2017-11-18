@@ -7,7 +7,6 @@
 // 
 //////////////////////////////////////////////////////
 
-// #define TFTP_CLIENT_ONLY 1
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN // this will assume smaller exe
@@ -40,14 +39,9 @@ typedef unsigned char  u_int8_t;
 typedef unsigned short u_int16_t;
 typedef unsigned long  u_int32_t;
 
-#define  TFTP_DEFADDR			"0.0.0.0"
 #define  DIR_TEXT_FILE          "dir.txt"
 
-#  define TFTP_TIMEOUT            3
 #  define TFTP_RETRANSMIT         6
-#  define TFTPD32_DEF_LOG_LEVEL   8
-#  define TFTP_DEFPORT			  69
-
 #define TFTP_MAXRETRIES          50 // do not resent same block more than # times
 
 #define  PLURAL(a)  ((a)>1 ? "s" : "")

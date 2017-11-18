@@ -118,42 +118,6 @@ static char *TftpExtendFileName(struct LL_TftpInfo *pTftp,
 
 
 /////////////////////
-// TftpBind : a bind function which choose ports in a range
-//            nLow (nHigh) is lowest (highest)allowed ports
-/////////////////////
-static int TftpBind(SOCKET s, struct LL_TftpInfo *pTftp, unsigned nLow, unsigned nHigh)
-{
-	unsigned nPort;
-	SOCKADDR_STORAGE in;
-	int       Rc;
-
-
-	// if settings unset or unconsistent, use defaults
-	nPort = (nLow == 69 || (nLow >= 1024 && nLow <= nHigh)) ? nLow : 0;
-
-	memset(&in, 0, sizeof in);
-	in.ss_family = pTftp->b.from.ss_family;
-	do
-	{
-		switch (in.ss_family)
-		{
-		case AF_INET:  (*(struct sockaddr_in *) & in).sin_port = htons((short)nPort);
-			break;
-
-		case AF_INET6: (*(struct sockaddr_in6 *) & in).sin6_port = htons((short)nPort);
-			break;
-		} // switch
-		Rc = bind(s, (struct sockaddr *)  & in, sizeof(in));
-	}
-	//     range set     highest not reach       error  is address in use
-	while (nPort != 0 && nPort++ < nHigh    &&    Rc != 0 && GetLastError() == WSAEADDRINUSE);
-
-	return Rc;
-} // TftpBind
-
-
-
-/////////////////////
 // TftpSysError : report errror in a system call
 /////////////////////
 static int TftpSysError(struct LL_TftpInfo *pTftp, int nTftpErr, char *szText)
@@ -194,6 +158,7 @@ static int TftpSelect(struct LL_TftpInfo *pTftp)
 	return Rc; // TRUE if something is ready
 } // TftpSelect
 
+
 void ScanDir(HANDLE hFile, const char *szDirectory)
 {
 	WIN32_FIND_DATAA  FindData;
@@ -213,6 +178,7 @@ void ScanDir(HANDLE hFile, const char *szDirectory)
 		{
 			// display only files, skip directories
 			if (FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)  continue;
+			if (strcmp(FindData.cFileName, DIR_TEXT_FILE) == 0) continue;
 			FileTimeToLocalFileTime(&FindData.ftCreationTime, &FtLocal);
 			FileTimeToSystemTime(&FtLocal, &SysTime);
 			GetDateFormatA(LOCALE_SYSTEM_DEFAULT,
@@ -220,9 +186,6 @@ void ScanDir(HANDLE hFile, const char *szDirectory)
 				&SysTime,
 				NULL,
 				szDate, sizeof szDate);
-			szDate[sizeof "jj/mm/aaaa" - 1] = 0;    // truncate date
-			FindData.cFileName[62] = 0;      // truncate file name if needed
-											 // dialog structure allow up to 64 char
 			sprintf(szLine, "%s\t%s\t%d\r\n",
 				FindData.cFileName, szDate, FindData.nFileSizeLow);
 			DWORD Dummy;
@@ -238,11 +201,7 @@ void ScanDir(HANDLE hFile, const char *szDirectory)
 int CreateIndexFile()
 {
 	HANDLE           hDirFile;
-	static int       Semaph = 0;
 	char szDirFile[MAX_PATH];
-
-	if (Semaph++ != 0)  return 0;
-
 	sprintf(szDirFile, "%s\\%s", g_szWorkingDirectory, DIR_TEXT_FILE);
 	hDirFile = CreateFileA(szDirFile,
 		GENERIC_WRITE,
@@ -251,11 +210,14 @@ int CreateIndexFile()
 		CREATE_ALWAYS,
 		FILE_ATTRIBUTE_ARCHIVE | FILE_FLAG_SEQUENTIAL_SCAN,
 		NULL);
-	if (hDirFile == INVALID_HANDLE_VALUE) return 0;
+	if (hDirFile == INVALID_HANDLE_VALUE)
+	{
+		LOG("Could not open file (error %d)", GetLastError());
+		return 0;
+	}
 	// Walk through directory
 	ScanDir(hDirFile, g_szWorkingDirectory);
 	CloseHandle(hDirFile);
-	Semaph = 0;
 	return 0;
 }
 
@@ -395,17 +357,6 @@ int DecodConnectData(struct LL_TftpInfo *pTftp)
 	tpack = (struct tftphdr *) pTftp->b.ackbuf;
 	tpack->th_opcode = htons(TFTP_OACK);
 	pAck = tpack->th_stuff;
-
-
-	char szOut[TFTP_SEGSIZE + 1] = { 0 };
-	for (size_t i = 0; i < TFTP_SEGSIZE; i++)
-	{
-		char t = tp->th_stuff[i];
-		if (t == '\0')
-			t = ' ';
-		szOut[i] = t;
-	}
-	OutputDebugStringA(szOut);
 
 	// ---------------------------------
 	// loop to handle options
@@ -563,6 +514,11 @@ static void TftpEndOfTransfer(struct LL_TftpInfo *pTftp)
 		pTftp->st.dwTotalTimeOut,
 		PLURAL(pTftp->st.dwTotalTimeOut));
 
+	if (pTftp->r.hFile != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(pTftp->r.hFile);
+	}
+
 } // TftpEndOfTransfer
 
 
@@ -618,14 +574,8 @@ int TftpSendFile(struct LL_TftpInfo *pTftp)
 			tp->th_opcode = htons(TFTP_DATA);
 			tp->th_block = htons((unsigned short)pTftp->c.nLastToSend);
 			//DoDebugSendBlock(pTftp); // empty ifndef DEBUG
-#ifdef TEST_DROPP
-			if (pTftp->c.nRetries < 3 && pTftp->c.nCount == 4)
-			{
-				LOG(1, "dropping 4th packet"), Rc = pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE;
-			}
-			else
-#endif
-				Rc = send(pTftp->r.skt, pTftp->b.buf, pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE, 0);
+
+			Rc = send(pTftp->r.skt, pTftp->b.buf, pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE, 0);
 
 			if (Rc < 0 || (unsigned)Rc != pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE)
 				return TftpSysError(pTftp, EUNDEF, "send");
@@ -637,7 +587,6 @@ int TftpSendFile(struct LL_TftpInfo *pTftp)
 		////////////////////////
 		if (TftpSelect(pTftp))       // something has been received
 		{
-			LOG("Something has been received!\n");
 			// retrieve the message (will not block since select has returned)
 			Rc = recv(pTftp->r.skt, pTftp->b.ackbuf, sizeof pTftp->b.ackbuf, 0);
 			if (Rc <= 0)     return TftpSysError(pTftp, EUNDEF, "recv");
@@ -795,9 +744,9 @@ int TftpRecvFile(struct LL_TftpInfo *pTftp, BOOL bOACK)
 					pTftp->c.nCount--;  // this will fixed the pb
 				}
 				else continue;  // wait for next block
-				} // ACK of block #0
+			} // ACK of block #0
 
-			   // pTftp->c.nCount is the last block acked
+		   // pTftp->c.nCount is the last block acked
 			if (ntohs(tp->th_block) == (unsigned short)(pTftp->c.nCount + 1))
 			{
 				pTftp->c.nCount++;
@@ -812,7 +761,7 @@ int TftpRecvFile(struct LL_TftpInfo *pTftp, BOOL bOACK)
 				// Stats
 				pTftp->st.dwTotalBytes += pTftp->c.dwBytes;    // set to 0 on error
 			} // # block received OK
-			} // Something received
+		} // Something received
 		else
 		{
 			LOG("timeout while waiting for data blk #%d", pTftp->c.nCount + 1);
@@ -825,27 +774,27 @@ int TftpRecvFile(struct LL_TftpInfo *pTftp, BOOL bOACK)
 		tp->th_block = htons((unsigned short)pTftp->c.nCount);
 		send(pTftp->r.skt, pTftp->b.ackbuf, TFTP_ACK_HEADERSIZE, 0);
 
-		} // do
+	} // do
 	while (pTftp->c.dwBytes == pTftp->s.dwPacketSize
 		&&  pTftp->c.nRetries < TFTP_MAXRETRIES
 		&&  pTftp->c.nTimeOut < TFTP_RETRANSMIT);
 
-		// MAX RETRIES -> synchro error
-		if (pTftp->c.nRetries >= TFTP_MAXRETRIES)
-		{
-			LOG("MAX RETRIES while waiting for Data block %d. file <%s>",
-				(unsigned short)(pTftp->c.nCount + 1), ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);
-			nak(pTftp, EUNDEF);  // return standard
-			return FALSE;
-		}
-		if (pTftp->c.nTimeOut >= TFTP_RETRANSMIT)
-		{
-			LOG("TIMEOUT while waiting for Data block %d, file <%s>",
-				(unsigned short)(pTftp->c.nCount + 1), ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);
-			nak(pTftp, EUNDEF);  // return standard
-			return FALSE;
-		}
-		TftpEndOfTransfer(pTftp);
-		return TRUE;
-	}   // TftpRecvFile
+	// MAX RETRIES -> synchro error
+	if (pTftp->c.nRetries >= TFTP_MAXRETRIES)
+	{
+		LOG("MAX RETRIES while waiting for Data block %d. file <%s>",
+			(unsigned short)(pTftp->c.nCount + 1), ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);
+		nak(pTftp, EUNDEF);  // return standard
+		return FALSE;
+	}
+	if (pTftp->c.nTimeOut >= TFTP_RETRANSMIT)
+	{
+		LOG("TIMEOUT while waiting for Data block %d, file <%s>",
+			(unsigned short)(pTftp->c.nCount + 1), ((struct tftphdr *) pTftp->b.cnx_frame)->th_stuff);
+		nak(pTftp, EUNDEF);  // return standard
+		return FALSE;
+	}
+	TftpEndOfTransfer(pTftp);
+	return TRUE;
+}   // TftpRecvFile
 
